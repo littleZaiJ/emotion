@@ -1,0 +1,54 @@
+name: clarity
+description: 恋爱账单 - 情感资产管理与决策支持 App
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.8
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
+  characters: ^1.3.0
+
+  # 状态管理
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # 数据库 (全平台含 Web)
+  hive_flutter: ^1.1.0
+
+  # 图表
+  fl_chart: ^0.68.0
+
+  # 路由
+  go_router: ^13.2.1
+
+  # 工具
+  intl: ^0.19.0
+  gap: ^3.0.1
+  google_fonts: ^6.2.1
+  uuid: ^4.4.0
+  flutter_animate: ^4.5.0
+  http: ^1.2.0
+  file_picker: ^8.0.0
+
+  # 分享功能
+  screenshot: ^3.0.0
+  share_plus: ^10.0.0
+  path_provider: ^2.1.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+  # 代码生成
+  build_runner: ^2.4.12
+  riverpod_generator: ^2.4.0
+  hive_generator: ^2.0.1
+
+flutter:
+  uses-material-design: true

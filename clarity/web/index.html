@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="A new Flutter project.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="clarity">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>恋爱账单</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #000000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    #loading {
+      text-align: center;
+      color: #8E8E93;
+    }
+    #loading h1 {
+      color: #00C087;
+      font-size: 24px;
+      margin-bottom: 16px;
+      font-weight: 700;
+    }
+    #loading p {
+      font-size: 14px;
+      margin: 8px 0;
+    }
+    .spinner {
+      border: 3px solid #1A1A1A;
+      border-top: 3px solid #00C087;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div id="loading">
+    <h1>恋爱账单</h1>
+    <p style="margin: 6px 0 0; letter-spacing: 0.3em; opacity: 0.55;">CLARITY</p>
+    <div class="spinner"></div>
+    <p>正在加载应用...</p>
+    <p id="loading-sub" style="font-size: 12px; color: #6D6D72;">首次加载可能需要 10-20 秒</p>
+  </div>
+  <script>
+    // 1) 如果之前安装过 Service Worker（旧版本缓存），可能导致资源 404/白屏转圈。
+    //    这里强制注销，避免“刷新很慢/一直加载中”。
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for (var i = 0; i < registrations.length; i++) {
+          registrations[i].unregister();
+        }
+      });
+    }
+
+    // 2) 把加载阶段的 JS 异常直接显示在页面上（方便你截图给我定位）。
+    function showBootError(msg) {
+      var sub = document.getElementById('loading-sub');
+      if (sub) {
+        sub.textContent = msg;
+        sub.style.color = '#FF2D55';
+      }
+      console.error(msg);
+    }
+
+    window.addEventListener('error', function(e) {
+      if (e && e.message) showBootError('加载失败：' + e.message);
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      var reason = (e && e.reason) ? (e.reason.message || String(e.reason)) : 'unknown';
+      showBootError('加载失败：' + reason);
+    });
+
+    // 3) 超时提示：仍在转圈时，提示强制刷新与清缓存
+    setTimeout(function() {
+      var loading = document.getElementById('loading');
+      if (loading && loading.style.display !== 'none') {
+        showBootError('仍在加载中…请按 Ctrl+Shift+R（或 Cmd+Shift+R）强制刷新；若仍无效，清理站点缓存/注销 Service Worker。');
+      }
+    }, 15000);
+
+    window.addEventListener('flutter-first-frame', function() {
+      var loading = document.getElementById('loading');
+      if (loading) {
+        loading.style.display = 'none';
+      }
+    });
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
