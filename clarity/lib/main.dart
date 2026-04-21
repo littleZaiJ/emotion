@@ -4,21 +4,28 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/theme/app_theme.dart';
 import 'core/utils/router.dart';
+import 'core/utils/web_url_strategy.dart';
 import 'data/local/hive_service.dart';
 import 'features/interaction/timer_provider.dart';
 import 'core/services/ci_service.dart';
+import 'core/constants/supabase_config.dart';
+import 'core/constants/dev_flags.dart';
+import 'core/services/supabase_smoke_test.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  if (kIsWeb) {
-    // Use hash strategy so IP:port static servers can refresh deep links safely.
-    setUrlStrategy(const HashUrlStrategy());
-  }
+  if (kIsWeb) configureUrlStrategy();
+
+  await Supabase.initialize(
+    url: kSupabaseUrl,
+    anonKey: kSupabaseAnonKey,
+  );
+
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
     debugPrint('FlutterError: ${details.exceptionAsString()}');
@@ -65,6 +72,11 @@ class _BootstrapState extends State<_Bootstrap> {
 
     setPhase('初始化本地存储…');
     await HiveService.init().timeout(const Duration(seconds: 12));
+
+    if (kEnableSupabaseSmokeTest) {
+      setPhase('Supabase 写入自检…');
+      await SupabaseSmokeTest.run().timeout(const Duration(seconds: 12));
+    }
 
     setPhase('应用规则…');
     CIService.checkNaturalRecovery();

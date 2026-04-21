@@ -9,9 +9,12 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/services/ci_service.dart';
 import '../../core/services/broadcast_service.dart';
+import '../../core/services/device_id_service.dart';
 import '../../core/services/graduation_service.dart';
+import '../../data/models/graduation_record.dart';
 import '../../data/local/hive_service.dart';
 import '../../data/local/entities/transaction_entity.dart';
+import '../community/community_provider.dart';
 import '../input/input_provider.dart';
 import '../dashboard/dashboard_provider.dart';
 
@@ -23,14 +26,102 @@ final _historyProvider = Provider<List<TransactionEntity>>((ref) {
 class HistoryScreen extends ConsumerWidget {
   const HistoryScreen({super.key});
 
-  Future<void> _confirmGraduate(BuildContext context, WidgetRef ref) async {
-    if (GraduationService.isGraduated) {
+  Future<void> _publishGraduationToSupabase(
+    BuildContext context,
+    WidgetRef ref, {
+    DashboardData? dashboard,
+  }) async {
+    try {
+      final repo = ref.read(communityRepositoryProvider);
+      final deviceId = await DeviceIdService.getOrCreate();
+      final alias = GraduationService.nickname ?? '匿名清醒者';
+      final title = GraduationService.generatedTitle ?? '新晋脱海者';
+      final stamp = GraduationService.stampText ?? '毕业';
+      final snap = GraduationService.snapshot;
+      final sunkCost = dashboard?.sunkCost ??
+          ((snap?['sunkCost'] as num?)?.toDouble() ?? 0.0);
+      final exitType = sunkCost > 0 ? 'TRAGIC' : 'SMART';
+      final totalInvestment = dashboard?.totalInvestment ??
+          ((snap?['totalInvestment'] as num?)?.toDouble() ?? 0.0);
+      final finalCi = dashboard?.ciValue ?? ((snap?['ci'] as num?)?.toDouble() ?? 0.0);
+
+      final record = GraduationRecord(
+        deviceId: deviceId,
+        userAlias: alias,
+        userTitle: title,
+        exitType: exitType,
+        totalInvestment: totalInvestment,
+        finalCi: finalCi,
+        aiSummary: stamp,
+      );
+
+      await repo.publishGraduation(record);
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('已毕业：账单已封存'),
+          content: Text('已同步到脱海大厅'),
           backgroundColor: AppColors.surface,
         ),
       );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('同步到脱海大厅失败：$e'),
+          backgroundColor: AppColors.surface,
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmGraduate(BuildContext context, WidgetRef ref) async {
+    if (GraduationService.isGraduated) {
+      final sync =
+          await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: AppColors.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(
+                  color: AppColors.border,
+                  width: 1,
+                ),
+              ),
+              title: const Text(
+                '已毕业：同步到脱海大厅？',
+                style: TextStyle(color: AppColors.textPrimary),
+              ),
+              content: const Text(
+                '你已封存账单（本地）。如果之前没同步过，可将毕业昵称/头衔同步到 Supabase 脱海大厅。',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text(
+                    '取消',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text(
+                    '同步',
+                    style: TextStyle(
+                      color: AppColors.income,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!context.mounted) return;
+      if (sync == true) {
+        await _publishGraduationToSupabase(context, ref);
+      }
       return;
     }
 
@@ -95,6 +186,8 @@ class HistoryScreen extends ConsumerWidget {
       transactions: txs,
       nickname: nickname,
     );
+    if (!context.mounted) return;
+    await _publishGraduationToSupabase(context, ref, dashboard: dashboard);
     if (!context.mounted) return;
     ref.invalidate(dashboardNotifierProvider);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -272,88 +365,161 @@ class _MyLedgerTab extends ConsumerWidget {
   }
 }
 
-class _HallOfClarityTab extends StatefulWidget {
+class _HallOfClarityTab extends ConsumerStatefulWidget {
   const _HallOfClarityTab();
 
   @override
-  State<_HallOfClarityTab> createState() => _HallOfClarityTabState();
+  ConsumerState<_HallOfClarityTab> createState() => _HallOfClarityTabState();
 }
 
-class _HallOfClarityTabState extends State<_HallOfClarityTab> {
-  late final List<_HallEntry> _sample;
+class _HallOfClarityTabState extends ConsumerState<_HallOfClarityTab> {
   final Map<String, _HallReactions> _reactions = {};
+  List<GraduationRecord> _remote = const [];
+  bool _loading = true;
+  Object? _error;
 
   @override
   void initState() {
     super.initState();
-    _sample = _HallEntry.sample();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
-  _HallEntry? _graduationEntry() {
-    if (!GraduationService.isGraduated) return null;
-    final snap = GraduationService.snapshot;
-    final title = GraduationService.generatedTitle ?? '新晋脱海者';
-    final name = GraduationService.nickname ?? '匿名清醒者';
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    List<GraduationRecord>? list;
+    Object? error;
+    try {
+      list = await ref
+          .read(communityRepositoryProvider)
+          .fetchHallOfClarity()
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      error = e;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      _error = error;
+      if (list != null) _remote = list;
+    });
+  }
+
+  _HallEntry _toEntry(GraduationRecord r) {
     return _HallEntry(
-      nickname: name,
-      generatedTitle: title,
-      at: GraduationService.graduatedAt ?? DateTime.now(),
-      days: (snap?['days'] as int?) ?? 0,
-      stopLoss: (snap?['sunkCost'] as num?)?.toDouble() ?? 0,
-      ci: (snap?['ci'] as num?)?.toDouble() ?? 1.0,
-      totalInvestment: (snap?['totalInvestment'] as num?)?.toDouble() ?? 0.0,
-      totalWaitHours:
-          ((snap?['totalWaitMinutes'] as num?)?.toDouble() ?? 0.0) / 60.0,
-      cheersCount: 0,
-      clarityCount: 0,
-      hugCount: 0,
-      warningCount: 0,
+      id: r.id,
+      nickname: r.userAlias,
+      generatedTitle: r.userTitle,
+      at: r.createdAt ?? DateTime.now(),
+      days: 0,
+      stopLoss: 0,
+      ci: r.finalCi,
+      totalInvestment: r.totalInvestment,
+      totalWaitHours: 0,
+      cheersCount: r.cheersCount,
+      hugCount: r.hugCount,
+      warningCount: r.warningCount,
     );
   }
 
   String _keyOf(_HallEntry entry) =>
+      entry.id ??
       '${entry.generatedTitle}|${entry.nickname}|${entry.at.toIso8601String()}';
+
+  Future<void> _interact(_HallEntry entry, String type) async {
+    final key = _keyOf(entry);
+    setState(() {
+      final v = _reactions[key] ?? const _HallReactions();
+      _reactions[key] = switch (type) {
+        'cheers' => v.copyWith(cheers: v.cheers + 1),
+        'hug' => v.copyWith(hug: v.hug + 1),
+        'warning' => v.copyWith(warning: v.warning + 1),
+        _ => v,
+      };
+    });
+
+    final id = entry.id;
+    if (id == null || id.isEmpty) return;
+
+    try {
+      await ref.read(communityRepositoryProvider).interact(id, type);
+      final list = await ref.read(communityRepositoryProvider).fetchHallOfClarity();
+      if (!mounted) return;
+      setState(() {
+        _remote = list;
+        _reactions.remove(key);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _reactions.remove(key));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('互动失败：$e'),
+          backgroundColor: AppColors.surface,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final items = <_HallEntry>[
-      if (_graduationEntry() != null) _graduationEntry()!,
-      ..._sample,
-    ];
+    final remoteEntries = _remote.map(_toEntry).toList(growable: false);
+    final items = remoteEntries;
 
-    return ListView.builder(
+    final list = ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      itemCount: items.length,
+      itemCount: items.isEmpty ? 1 : items.length + (_loading || _error != null ? 1 : 0),
       itemBuilder: (context, index) {
-        final item = items[index];
+        if (items.isEmpty) {
+          final text = _loading
+              ? '加载脱海大厅…'
+              : _error != null
+                  ? '脱海大厅加载失败：${_error ?? ''}'
+                  : '脱海大厅暂无记录';
+          return Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 12, color: AppColors.textTertiary),
+            ),
+          );
+        }
+
+        if (index == 0 && (_loading || _error != null)) {
+          final text = _loading ? '加载脱海大厅…' : '脱海大厅加载失败：${_error ?? ''}';
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 12, color: AppColors.textTertiary),
+            ),
+          );
+        }
+
+        final item = items[index - (_loading || _error != null ? 1 : 0)];
         final key = _keyOf(item);
         final current = _reactions[key] ?? const _HallReactions();
         final hydrated = item.copyWith(
           cheersCount: item.cheersCount + current.cheers,
-          clarityCount: item.clarityCount + current.clarity,
           hugCount: item.hugCount + current.hug,
           warningCount: item.warningCount + current.warning,
         );
         return _HallCard(
           entry: hydrated,
-          onCheers: () => setState(() {
-            final v = _reactions[key] ?? const _HallReactions();
-            _reactions[key] = v.copyWith(cheers: v.cheers + 1);
-          }),
-          onClarity: () => setState(() {
-            final v = _reactions[key] ?? const _HallReactions();
-            _reactions[key] = v.copyWith(clarity: v.clarity + 1);
-          }),
-          onHug: () => setState(() {
-            final v = _reactions[key] ?? const _HallReactions();
-            _reactions[key] = v.copyWith(hug: v.hug + 1);
-          }),
-          onWarning: () => setState(() {
-            final v = _reactions[key] ?? const _HallReactions();
-            _reactions[key] = v.copyWith(warning: v.warning + 1);
-          }),
+          onCheers: () => _interact(item, 'cheers'),
+          onHug: () => _interact(item, 'hug'),
+          onWarning: () => _interact(item, 'warning'),
         );
       },
+    );
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: list,
     );
   }
 }
@@ -362,21 +528,18 @@ enum GraduationType { smart, tragic }
 
 class _HallReactions {
   final int cheers;
-  final int clarity;
   final int hug;
   final int warning;
 
   const _HallReactions({
     this.cheers = 0,
-    this.clarity = 0,
     this.hug = 0,
     this.warning = 0,
   });
 
-  _HallReactions copyWith({int? cheers, int? clarity, int? hug, int? warning}) {
+  _HallReactions copyWith({int? cheers, int? hug, int? warning}) {
     return _HallReactions(
       cheers: cheers ?? this.cheers,
-      clarity: clarity ?? this.clarity,
       hug: hug ?? this.hug,
       warning: warning ?? this.warning,
     );
@@ -384,6 +547,7 @@ class _HallReactions {
 }
 
 class _HallEntry {
+  final String? id;
   final String nickname;
   final String generatedTitle;
   final DateTime at;
@@ -393,11 +557,11 @@ class _HallEntry {
   final double totalInvestment;
   final double totalWaitHours;
   int cheersCount;
-  int clarityCount;
   int hugCount;
   int warningCount;
 
   _HallEntry({
+    this.id,
     required this.nickname,
     required this.generatedTitle,
     required this.at,
@@ -407,7 +571,6 @@ class _HallEntry {
     required this.totalInvestment,
     required this.totalWaitHours,
     required this.cheersCount,
-    required this.clarityCount,
     required this.hugCount,
     required this.warningCount,
   });
@@ -421,11 +584,11 @@ class _HallEntry {
 
   _HallEntry copyWith({
     int? cheersCount,
-    int? clarityCount,
     int? hugCount,
     int? warningCount,
   }) {
     return _HallEntry(
+      id: id,
       nickname: nickname,
       generatedTitle: generatedTitle,
       at: at,
@@ -435,72 +598,21 @@ class _HallEntry {
       totalInvestment: totalInvestment,
       totalWaitHours: totalWaitHours,
       cheersCount: cheersCount ?? this.cheersCount,
-      clarityCount: clarityCount ?? this.clarityCount,
       hugCount: hugCount ?? this.hugCount,
       warningCount: warningCount ?? this.warningCount,
     );
-  }
-
-  static List<_HallEntry> sample() {
-    final now = DateTime.now();
-    return [
-      _HallEntry(
-        nickname: '编号 0429 用户',
-        generatedTitle: '耐力冠军',
-        at: now.subtract(const Duration(hours: 6)),
-        days: 128,
-        stopLoss: 4500,
-        ci: 0.95,
-        totalInvestment: 6200,
-        totalWaitHours: 112,
-        cheersCount: 0,
-        clarityCount: 0,
-        hugCount: 89,
-        warningCount: 234,
-      ),
-      _HallEntry(
-        nickname: '编号 1103 用户',
-        generatedTitle: '新晋脱海者',
-        at: now.subtract(const Duration(days: 1, hours: 3)),
-        days: 39,
-        stopLoss: 0,
-        ci: 1.00,
-        totalInvestment: 880,
-        totalWaitHours: 6,
-        cheersCount: 76,
-        clarityCount: 33,
-        hugCount: 0,
-        warningCount: 0,
-      ),
-      _HallEntry(
-        nickname: '编号 0717 用户',
-        generatedTitle: '理智大债主',
-        at: now.subtract(const Duration(days: 2, hours: 9)),
-        days: 64,
-        stopLoss: 3200,
-        ci: 0.88,
-        totalInvestment: 2700,
-        totalWaitHours: 58,
-        cheersCount: 0,
-        clarityCount: 0,
-        hugCount: 57,
-        warningCount: 141,
-      ),
-    ];
   }
 }
 
 class _HallCard extends StatelessWidget {
   final _HallEntry entry;
   final VoidCallback onCheers;
-  final VoidCallback onClarity;
   final VoidCallback onHug;
   final VoidCallback onWarning;
 
   const _HallCard({
     required this.entry,
     required this.onCheers,
-    required this.onClarity,
     required this.onHug,
     required this.onWarning,
   });
@@ -613,31 +725,18 @@ class _HallCard extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              if (!isTragic) ...[
-                _HallActionChip(
-                  label: '🥂 沾喜气 (${entry.cheersCount})',
-                  color: Colors.greenAccent,
-                  onTap: onCheers,
-                ),
-                const SizedBox(width: 10),
-                _HallActionChip(
-                  label: '👏 人间清醒 (${entry.clarityCount})',
-                  color: const Color(0xFFBFA46B),
-                  onTap: onClarity,
-                ),
-              ] else ...[
-                _HallActionChip(
-                  label: '🫂 抱抱 (${entry.hugCount})',
-                  color: const Color(0xFFFFB26B),
-                  onTap: onHug,
-                ),
-                const SizedBox(width: 10),
-                _HallActionChip(
-                  label: '🤡 引以为戒 (${entry.warningCount})',
-                  color: Colors.redAccent,
-                  onTap: onWarning,
-                ),
-              ],
+              _HallActionChip(
+                label:
+                    '${isTragic ? '🫂 抱抱' : '🥂 沾喜气'} (${isTragic ? entry.hugCount : entry.cheersCount})',
+                color: isTragic ? const Color(0xFFFFB26B) : Colors.greenAccent,
+                onTap: isTragic ? onHug : onCheers,
+              ),
+              const SizedBox(width: 10),
+              _HallActionChip(
+                label: '🤡 引以为戒 (${entry.warningCount})',
+                color: Colors.redAccent,
+                onTap: onWarning,
+              ),
             ],
           ),
         ],
