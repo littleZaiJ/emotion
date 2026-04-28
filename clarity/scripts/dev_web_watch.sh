@@ -14,6 +14,14 @@ set -euo pipefail
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8080}"
 WATCH_DIRS="${WATCH_DIRS:-lib test}"
+if [[ -f ".env.local" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source ".env.local"
+  set +a
+fi
+
+LONGCAT_API_KEY="${LONGCAT_API_KEY:-}"
 POLL_SECONDS="${POLL_SECONDS:-1}"
 DEBOUNCE_SECONDS="${DEBOUNCE_SECONDS:-0.6}"
 # Default to hot restart on web-server: hot reload often times out with remote clients.
@@ -51,7 +59,12 @@ echo "[dev_web_watch] Refresh the page to see latest build."
 # but let Flutter read from its own read-only open of the FIFO.
 exec 3<>"$FIFO"
 
-flutter run -d web-server --web-hostname "$HOST" --web-port "$PORT" <"$FIFO" &
+ARGS=(run -d web-server --web-hostname "$HOST" --web-port "$PORT")
+if [[ -n "${LONGCAT_API_KEY}" ]]; then
+  ARGS+=(--dart-define="LONGCAT_API_KEY=${LONGCAT_API_KEY}")
+fi
+
+flutter "${ARGS[@]}" <"$FIFO" &
 flutter_pid="$!"
 
 trap 'kill "$flutter_pid" 2>/dev/null || true; cleanup' EXIT

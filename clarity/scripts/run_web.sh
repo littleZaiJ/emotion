@@ -4,6 +4,15 @@ set -euo pipefail
 PORT="${PORT:-3000}"
 HOST="${HOST:-127.0.0.1}"
 
+if [[ -f ".env.local" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source ".env.local"
+  set +a
+fi
+
+LONGCAT_API_KEY="${LONGCAT_API_KEY:-}"
+
 detect_lan_ip() {
   if command -v ipconfig >/dev/null 2>&1; then
     # macOS
@@ -43,4 +52,9 @@ else
 fi
 echo
 
-flutter run -d web-server --web-port "$PORT" --web-hostname "$HOST"
+ARGS=(run -d web-server --web-port "$PORT" --web-hostname "$HOST")
+if [[ -n "${LONGCAT_API_KEY}" ]]; then
+  ARGS+=(--dart-define="LONGCAT_API_KEY=${LONGCAT_API_KEY}")
+fi
+
+flutter "${ARGS[@]}"

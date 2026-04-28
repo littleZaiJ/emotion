@@ -67,7 +67,7 @@ class HistoryScreen extends ConsumerWidget {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('同步到脱海大厅失败：$e'),
+          content: Text('同步到脱海大厅失败（可能网络超时）：$e'),
           backgroundColor: AppColors.surface,
         ),
       );
@@ -447,7 +447,10 @@ class _HallOfClarityTabState extends ConsumerState<_HallOfClarityTab> {
 
     try {
       await ref.read(communityRepositoryProvider).interact(id, type);
-      final list = await ref.read(communityRepositoryProvider).fetchHallOfClarity();
+      final list = await ref
+          .read(communityRepositoryProvider)
+          .fetchHallOfClarity()
+          .timeout(const Duration(seconds: 10));
       if (!mounted) return;
       setState(() {
         _remote = list;

@@ -33,6 +33,9 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Local secrets (do not commit)
+.env.local
+
 # Symbolication related
 app.*.symbols
 

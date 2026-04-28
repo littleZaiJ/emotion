@@ -798,7 +798,7 @@ class _ApiKeyRow extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: const Text(
-          'Claude API Key',
+          'LongCat API Key',
           style: TextStyle(color: AppColors.textPrimary),
         ),
         content: Column(
@@ -813,7 +813,7 @@ class _ApiKeyRow extends StatelessWidget {
                 fontSize: 14,
               ),
               decoration: const InputDecoration(
-                hintText: 'sk-...',
+                hintText: 'ak_...',
                 hintStyle: TextStyle(
                   color: AppColors.textTertiary,
                   fontSize: 13,
@@ -829,7 +829,7 @@ class _ApiKeyRow extends StatelessWidget {
             ),
             const Gap(8),
             const Text(
-              '配置后短评将更毒舌（可选），留空则使用内置规则引擎',
+              '配置后 Crush 粉碎机 / 短评将更毒舌（可选），留空则使用内置规则引擎',
               style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
             ),
           ],

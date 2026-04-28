@@ -29,7 +29,7 @@ class UserSettingsEntity extends HiveObject {
   @HiveField(1)
   int dignityThresholdMin = 240;
 
-  /// Claude API Key
+  /// LongCat API Key（OpenAI 兼容格式）
   @HiveField(2)
   String claudeApiKey = '';
 

@@ -5,8 +5,10 @@ import 'package:gap/gap.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/services/ai_verdict_service.dart';
 import '../../core/services/graduation_service.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/constants/longcat_config.dart';
 import '../../data/local/entities/transaction_entity.dart';
 import '../settings/settings_provider.dart';
 import 'input_provider.dart';
@@ -769,10 +771,37 @@ class _AiVerdictFormState extends ConsumerState<_AiVerdictForm> {
       _hasResult = false;
     });
 
-    // MVP：模拟分析（按截图数量给出可用的结构化结果）
-    await Future<void>.delayed(const Duration(milliseconds: 900));
+    final images = <Uint8List>[];
+    for (final f in _shots) {
+      final bytes = f.bytes;
+      if (bytes == null || bytes.isEmpty) continue;
+      images.add(bytes);
+      if (images.length >= 4) break; // 避免一次传太多图导致超时/过大
+    }
 
-    final n = _shots.length;
+    final llm = await AiVerdictService.analyzeCrush(
+      apiKey: kLongcatApiKey,
+      images: images,
+      note: widget.noteController.text,
+    );
+
+    final result = llm ?? _fallbackAnalyze(_shots.length);
+
+    setState(() {
+      _score = result.perfunctory;
+      _label = result.label;
+      _diagnosis = result.diagnosis;
+      _ciDelta = result.ciDelta;
+      _delusion = result.delusion;
+      _perfunctory = result.perfunctory;
+      _shatter = result.shatter;
+      _hasResult = true;
+      _analyzing = false;
+    });
+  }
+
+  AiVerdictResult _fallbackAnalyze(int n) {
+    // 兜底：规则引擎（按截图数量给出可用的结构化结果）
     final perfunctory = n >= 6 ? 92.0 : (n >= 3 ? 78.0 : 56.0);
     final delusion = (100 - perfunctory).clamp(0, 100).toDouble();
     final shatter = (perfunctory * 0.9 + n * 2).clamp(0, 100).toDouble();
@@ -788,17 +817,14 @@ class _AiVerdictFormState extends ConsumerState<_AiVerdictForm> {
         ? -0.10
         : (perfunctory >= 70 ? -0.05 : 0.0);
 
-    setState(() {
-      _score = perfunctory;
-      _label = label;
-      _diagnosis = diagnosis;
-      _ciDelta = ciDelta;
-      _delusion = delusion;
-      _perfunctory = perfunctory;
-      _shatter = shatter;
-      _hasResult = true;
-      _analyzing = false;
-    });
+    return AiVerdictResult(
+      perfunctory: perfunctory,
+      delusion: delusion,
+      shatter: shatter,
+      label: label,
+      diagnosis: diagnosis,
+      ciDelta: ciDelta,
+    );
   }
 
   void _save() {
